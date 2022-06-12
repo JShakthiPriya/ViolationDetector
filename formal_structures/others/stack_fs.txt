@@ -1,0 +1,425 @@
+STATE before_parse
+    CREATE self_referential_struct_name ""
+    CREATE self_ref_ptr ""
+    CREATE new_node_name ""
+    CREATE new_node_link_set False
+    CREATE link_set_to_new_node False
+    CREATE cur_func_name ""
+    CREATE total_node_ptr_is_alloced {}
+    CREATE function_parameters {}
+    CREATE list_struct_name ""
+    CREATE list_head_name ""
+    COMMENT list_struct_name and list_head_name are set only if the program uses a separate structure containing the list head pointer
+    CREATE stack_params []
+    CREATE assignments {}
+    CREATE push_func_name ''
+    CREATE push_params []
+    CREATE pop_func_name ''
+    CREATE pop_params []
+    CREATE delete_found False
+    CREATE stack_found False
+    CREATE main_line_no 0
+    CREATE stack_arr_struct ""
+    CREATE s_inds []
+    CREATE s_arr_member ""
+    COMMENT s_inds contains all int type vars in the struct as they may represent the stack top
+    CREATE s_top_incr False
+    CREATE s_top_assigned False
+    CREATE s_top_decr False
+    CREATE funcs_with_isempty_check [] 
+END_STATE
+
+STATE structures_and_unions
+    USE_GLOBAL self_referential_struct_name
+    USE_GLOBAL self_ref_ptr
+    USE_GLOBAL list_struct_name
+    USE_GLOBAL list_head_name
+    USE_GLOBAL stack_arr_struct
+    USE_GLOBAL s_inds
+    USE_GLOBAL s_arr_member
+    IF 'struct' IN EXP
+        COMMENT Checking only struct declarations, not unions.
+        IF self_referential_struct_name EQUALTO ""
+            FOR memb IN STRUCT_MEMBERS
+                SET t "type"
+                SET d "declarators"
+                COMMENT 'INDEX memb "type"' is invalid as memb_"type" is not a valid identifier
+                INDEX memb t
+                INDEX memb d
+                IF NAME IN memb_t
+                    FOR i IN range(len(memb_d))
+                        INDEX memb_d i
+                        IF memb_d_i.isidentifier() EQUALTO True
+                            SET self_ref_ptr memb_d_i
+                            SET self_referential_struct_name NAME
+                            BREAK
+                        END_IF
+                    END_FOR
+                END_IF
+            END_FOR
+        ELSE
+            IF list_struct_name EQUALTO ""
+                IF self_referential_struct_name NOTEQUALTO ""
+                    FOR memb IN STRUCT_MEMBERS
+                        SET t "type"
+                        SET d "declarators"
+                        INDEX memb t
+                        INDEX memb d
+                        IF self_referential_struct_name IN memb_t
+                            SET list_struct_name NAME
+                            FOR i IN range(len(memb_d))
+                                INDEX memb_d i
+                                IF memb_d_i.isidentifier() EQUALTO True
+                                    SET list_head_name memb_d_i
+                                    BREAK
+                                END_IF
+                            END_FOR
+                        END_IF
+                    END_FOR
+                END_IF
+            END_IF
+        END_IF     
+        
+        IF self_referential_struct_name EQUALTO ""
+            FOR memb IN STRUCT_MEMBERS
+                IF '*' IN memb['declarators']
+                    SET stack_arr_struct NAME
+                    FOR term IN memb['declarators']
+                        IF term.isidentifier() IS_TRUE
+                            SET s_arr_member term
+                        END_IF
+                    END_FOR
+                END_IF
+                IF '[' IN memb['declarators']
+                    IF ']' IN memb['declarators']
+                        SET stack_arr_struct NAME
+                        FOR term IN memb['declarators']
+                            IF term.isidentifier() IS_TRUE
+                                SET s_arr_member term
+                            END_IF
+                        END_FOR
+                    END_IF
+                END_IF
+            END_FOR
+            
+            IF stack_arr_struct IS_TRUE
+                FOR memb IN STRUCT_MEMBERS
+                    IF 'int' IN memb['type']
+                        IF '*' NOTIN memb['declarators']
+                            IF '[' NOTIN  memb['declarators']
+                                FOR memb_var IN memb['declarators']
+                                    IF memb_var.isidentifier() IS_TRUE
+                                        APPEND s_inds memb_var
+                                        BREAK
+                                    END_IF
+                                END_FOR
+                            END_IF
+                        END_IF
+                    END_IF
+                END_FOR
+            END_IF
+        END_IF
+           
+    END_IF    
+END_STATE
+
+STATE function_header
+    USE_GLOBAL new_node_name
+    USE_GLOBAL new_node_link_set
+    USE_GLOBAL link_set_to_new_node
+    USE_GLOBAL assignments 
+    USE_GLOBAL stack_params
+    USE_GLOBAL delete_found
+    USE_GLOBAL main_line_no
+    USE_GLOBAL s_top_incr
+    USE_GLOBAL s_top_assigned
+    USE_GLOBAL s_top_decr
+    USE_GLOBAL s_top_in_eq_cond
+    USE_GLOBAL cur_func_name
+    SET new_node_name ""
+    SET new_node_link_set False
+    SET link_set_to_new_node False
+    SET assignments {}
+    SET stack_param_type self_referential_struct_name
+    SET stack_params []
+    SET delete_found False
+    SET s_top_incr False
+    SET s_top_assigned False 
+    IF list_struct_name IS_TRUE
+        SET stack_param_type list_struct_name
+    END_IF
+    FOR var IN FUNC_PARAMS
+        IF stack_param_type IN FUNC_PARAMS[var]
+            APPEND stack_params var
+        END_IF
+    END_FOR  
+    
+    IF NAME EQUALTO 'main'
+        SET main_line_no LINE
+    END_IF
+     
+    SET s_top_decr False   
+    SET cur_func_name NAME
+      
+END_STATE
+
+STATE function_end
+    USE_GLOBAL push_func_name
+    USE_GLOBAL pop_func_name
+    USE_GLOBAL delete_found
+    IF new_node_name IS_TRUE
+        IF new_node_link_set IS_TRUE
+           IF link_set_to_new_node IS_TRUE
+                SET push_func_name NAME
+            END_IF
+        END_IF
+    END_IF
+    
+    IF delete_found IS_TRUE
+        SET pop_func_name NAME
+    END_IF  
+    
+    IF s_top_incr IS_TRUE
+        IF s_top_assigned IS_TRUE
+            SET push_func_name NAME
+        END_IF
+    END_IF
+    
+    IF s_top_decr IS_TRUE
+        IF NAME IN funcs_with_isempty_check
+            SET pop_func_name NAME
+        ELSE
+            FOR isempty_func_name IN funcs_with_isempty_check
+                IF isempty_func_name IN FUNC_BODY
+                    SET pop_func_name NAME
+                    BREAK
+                END_IF
+            END_FOR
+        END_IF
+    END_IF
+    
+END_STATE
+
+STATE equality_cond 
+    FOR var IN s_inds
+        IF var IN EXP
+            APPEND funcs_with_isempty_check cur_func_name
+        END_IF
+    END_FOR
+END_STATE
+
+STATE variable_assignments
+    USE_GLOBAL new_node_name
+    USE_GLOBAL new_node_link_set
+    USE_GLOBAL link_set_to_new_node 
+    USE_GLOBAL self_ref_ptr
+    USE_GLOBAL node_ptr_is_alloced
+    USE_GLOBAL assignments
+    USE_GLOBAL s_top_incr
+    USE_GLOBAL s_top_assigned
+    USE_GLOBAL s_top_decr
+    
+    IF new_node_name EQUALTO ""
+        IF 'malloc' IN RHS
+            SET new_node_name NAME    
+        ELSE
+            IF 'calloc' IN RHS
+                SET new_node_name NAME
+            END_IF
+        END_IF  
+    ELSE 
+        IF new_node_name IN LHS
+            IF '->' IN LHS
+                IF self_ref_ptr IN LHS
+                    IF list_struct_name IS_TRUE
+                        IF list_head_name IN RHS
+                            SET new_node_link_set True
+                        END_IF
+                    ELSE
+                        SET new_node_link_set True
+                    END_IF
+                END_IF
+            END_IF
+        END_IF
+        IF new_node_name IN RHS
+            IF list_struct_name IS_TRUE
+                IF list_head_name IN LHS
+                    SET link_set_to_new_node True
+                END_IF
+            ELSE
+                SET link_set_to_new_node True
+            END_IF
+        END_IF
+    END_IF      
+    
+    DICT_APPEND assignments NAME RHS
+        
+    COMMENT Either s->top = s->top+1 or s->top += 1 may be used to incr s->top.
+    IF '+' IN EXP
+        IF '1' IN RHS
+            FOR var IN s_inds
+                IF var IN LHS
+                    SET s_top_incr True
+                    BREAK
+                END_IF
+            END_FOR    
+        END_IF
+    END_IF
+    IF '+=' IN EXP
+        IF '1' IN RHS
+            FOR var IN s_inds
+                IF var IN LHS
+                    SET s_top_incr True
+                    BREAK
+                END_IF
+            END_FOR    
+        END_IF
+    END_IF
+    
+    IF s_arr_member IN LHS
+        FOR var IN s_inds
+            IF var IN LHS
+                SET s_top_assigned True            
+            END_IF
+        END_FOR
+    END_IF
+    
+    IF '-' IN EXP
+        IF '1' IN RHS
+            FOR var IN s_inds
+                IF var IN LHS
+                    SET s_top_decr True
+                    BREAK
+                END_IF
+            END_FOR    
+        END_IF
+    END_IF
+    IF '-=' IN EXP
+        IF '1' IN RHS
+            FOR var IN s_inds
+                IF var IN LHS
+                    SET s_top_decr True
+                    BREAK
+                END_IF
+            END_FOR    
+        END_IF
+    END_IF
+    
+END_STATE
+
+STATE initialized_declaration
+    USE_GLOBAL new_node_name
+    IF new_node_name EQUALTO ""
+        IF 'malloc' IN RHS
+            SET new_node_name NAME    
+        ELSE
+            IF 'calloc' IN RHS
+                SET new_node_name NAME
+            END_IF
+        END_IF  
+    END_IF
+    DICT_APPEND assignments NAME RHS
+END_STATE
+
+STATE function_call
+    USE_GLOBAL stack_params
+    USE_GLOBAL list_struct_name
+    USE_GLOBAL list_head_name
+    USE_GLOBAL push_func_name
+    USE_GLOBAL push_params
+    USE_GLOBAL delete_found
+    USE_GLOBAL pop_params
+    USE_GLOBAL stack_found
+    
+    IF NAME EQUALTO 'free'
+        COMMENT free() will take exactly one arg
+        SET var_name FUNC_ARGS[0]
+        INDEX assignments var_name
+        FOR param IN stack_params
+            FOR term IN param
+                IF term.isidentifier() IS_TRUE
+                    BREAK
+                END_IF
+            END_FOR
+        
+            IF term IN assignments_var_name
+                IF list_struct_name IS_TRUE
+                    IF list_head_name IN assignments_var_name
+                        SET delete_found True
+                    END_IF
+                ELSE
+                    SET delete_found True
+                END_IF
+            END_IF
+        END_FOR
+        
+    ELSE
+        IF stack_found IS_FALSE 
+            IF NAME EQUALTO push_func_name
+                SET push_params FUNC_ARGS
+                IF pop_params IS_TRUE
+                    IF set(push_params)-set(pop_params) NOTEQUALTO push_params
+                        COMMENT push() and pop() have a common argument
+                        SET stack_found True
+                    END_IF
+                END_IF
+            END_IF   
+            IF NAME EQUALTO pop_func_name  
+                SET pop_params FUNC_ARGS
+                IF push_params IS_TRUE
+                    IF set(push_params)-set(pop_params) NOTEQUALTO push_params
+                        COMMENT push() and pop() have a common argument
+                        SET stack_found True
+                    END_IF
+                END_IF
+            END_IF
+        END_IF
+    END_IF   
+END_STATE
+
+STATE after_parse
+    IF stack_found IS_FALSE    
+        IF push_func_name IS_FALSE
+            PRINT main_line_no
+            VIOLATION Push function not found
+        END_IF
+        IF pop_func_name IS_FALSE
+            PRINT main_line_no
+            VIOLATION Pop function not found
+        END_IF
+        IF push_func_name IS_TRUE
+            IF pop_func_name IS_TRUE
+                PRINT main_line_no
+                VIOLATION Push and pop functions have not been invoked on the same data structure
+            END_IF
+        END_IF
+    END_IF
+END_STATE
+
+STATE unary_expression
+    USE_GLOBAL s_top_incr
+    USE_GLOBAL s_top_decr    
+    IF '++' IN EXP
+        FOR var IN s_inds
+            IF var IN EXP
+                SET s_top_incr True
+                BREAK
+            END_IF
+        END_IF
+    END_IF
+    
+    IF '--' IN EXP
+        FOR var IN s_inds
+            IF var IN EXP
+                SET s_top_decr True
+                BREAK
+            END_IF
+        END_IF
+    END_IF
+    
+END_STATE
+
+
+
+
+

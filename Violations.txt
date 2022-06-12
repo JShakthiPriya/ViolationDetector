@@ -1,0 +1,4 @@
+10
+ Explicitly specify void when a function accept no arguments!
+16
+ Explicitly specify void when a function accept no arguments!
