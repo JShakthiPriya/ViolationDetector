@@ -1,0 +1,2 @@
+# ViolationDetector
+Good software development requires programmers to maintain some well-definedand standard style of coding called coding standards. Institutions/Companiesusually make their own coding standards and guidelines depending on what suitstheir organization best and based on the type of the software they develop. Thereis no way to detect if employees have been followed other than doing it manually. This is a tool that highlights your semantic violations in no time.
